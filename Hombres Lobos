@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego de Lobos - CMK</title>
+    <style>
+        :root { --gold: #d4af37; --dark: #1a1a1a; }
+        body { font-family: 'Segoe UI', serif; background: var(--dark); color: #e0e0e0; text-align: center; padding: 10px; }
+        
+        .container { max-width: 500px; margin: auto; }
+        
+        /* Estilo de la Carta */
+        .card-display { 
+            background: #f4e4bc; 
+            color: #2c2c2c; 
+            border: 8px solid #3d2b1f;
+            border-radius: 15px; 
+            padding: 10px; 
+            margin: 20px auto; 
+            display: none;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .card-img { width: 100%; border-radius: 5px; border: 2px solid #3d2b1f; }
+        
+        .btn { background: #8e2121; border: 2px solid var(--gold); padding: 12px 24px; color: white; 
+               font-weight: bold; border-radius: 5px; cursor: pointer; margin: 10px; width: 80%; }
+        
+        input[type="text"] { padding: 12px; width: 70%; border-radius: 5px; border: none; margin-bottom: 10px; }
+
+        /* Panel Admin Oculto */
+        #adminPanel { 
+            display: none; 
+            border: 2px dashed var(--gold); 
+            padding: 15px; 
+            margin-top: 20px; 
+            background: #252525;
+        }
+        .opcion-carta { display: block; text-align: left; margin: 10px 20px; font-size: 1.1em; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>🐺 Los Lobos 🐺</h1>
+
+        <div id="registro">
+            <p>Introduce tu nombre para entrar a la aldea:</p>
+            <input type="text" id="nombreUsuario" placeholder="Tu nombre...">
+            <button class="btn" onclick="unirse()">ENTRAR</button>
+        </div>
+
+        <div id="espera" style="display:none;">
+            <p>Conectado como: <strong id="miNombreDisplay"></strong></p>
+            <p>Esperando a que comience la noche...</p>
+            <hr>
+            <p>Aldeanos en la plaza: <br><span id="listaJugadores"></span></p>
+        </div>
+
+        <div id="resultado" class="card-display">
+            <h2 id="rolTitulo"></h2>
+            <img id="rolImg" src="" class="card-img" alt="Tu carta">
+        </div>
+
+        <div id="adminPanel">
+            <h3>👑 Panel de Narrador</h3>
+            <div id="configuracion">
+                <label class="opcion-carta"><input type="checkbox" class="especial" value="Vidente"> Habilitar Vidente</label>
+                <label class="opcion-carta"><input type="checkbox" class="especial" value="Bruja"> Habilitar Bruja</label>
+                <label class="opcion-carta"><input type="checkbox" class="especial" value="Ladrón"> Habilitar Ladrón</label>
+                <label class="opcion-carta"><input type="checkbox" class="especial" value="Zombie"> Habilitar Zombie</label>
+                <button class="btn" onclick="repartir()">REPARTIR CARTAS</button>
+                <button class="btn" style="background:#444" onclick="reiniciar()">REINICIAR JUEGO</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getDatabase, ref, set, onValue, update, remove } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+        const firebaseConfig = {
+            apiKey: "TU_API_KEY",
+            databaseURL: "TU_DATABASE_URL",
+            projectId: "TU_PROJECT_ID",
+            appId: "TU_APP_ID"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // MAPA DE IMÁGENES (Usa los nombres de tus archivos)
+        const imagenes = {
+            "Hombre-Lobo": "1775911732145.png",
+            "Vidente": "1775911512465.png",
+            "Bruja": "1775911378193.png",
+            "Ladrón": "1775911800012.png",
+            "Zombie": "IMG-20260209-WA0015.jpg",
+            "Aldeano": "1775911046602.png"
+        };
+
+        let miNombre = "";
+
+        // --- SEGURIDAD DE ADMIN ---
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get('admin') === '1234') { // <--- ESTA ES TU LLAVE
+            document.getElementById('adminPanel').style.display = 'block';
+        }
+
+        window.unirse = () => {
+            miNombre = document.getElementById("nombreUsuario").value.trim();
+            if (!miNombre) return;
+            set(ref(db, 'jugadores/' + miNombre), { nombre: miNombre, carta: "..." });
+            document.getElementById("miNombreDisplay").innerText = miNombre;
+            document.getElementById("registro").style.display = "none";
+            document.getElementById("espera").style.display = "block";
+        };
+
+        onValue(ref(db), (snapshot) => {
+            const data = snapshot.val();
+            if (!data) return;
+
+            if (data.jugadores) {
+                document.getElementById("listaJugadores").innerText = Object.keys(data.jugadores).join(" - ");
+                
+                if (data.estado === "repartido" && data.jugadores[miNombre] && data.jugadores[miNombre].carta !== "...") {
+                    const miRol = data.jugadores[miNombre].carta;
+                    document.getElementById("espera").style.display = "none";
+                    document.getElementById("resultado").style.display = "block";
+                    document.getElementById("rolTitulo").innerText = miRol.toUpperCase();
+                    document.getElementById("rolImg").src = imagenes[miRol];
+                }
+            }
+            if (data.estado === "esperando") {
+                document.getElementById("resultado").style.display = "none";
+                if(miNombre) document.getElementById("espera").style.display = "block";
+            }
+        });
+
+        window.repartir = () => {
+            onValue(ref(db, 'jugadores'), (snap) => {
+                const jugs = snap.val();
+                if (!jugs) return;
+                let nombres = Object.keys(jugs);
+                let mazo = ["Hombre-Lobo"];
+                document.querySelectorAll('.especial:checked').forEach(c => mazo.push(c.value));
+                
+                while (mazo.length < nombres.length) mazo.push("Aldeano");
+                mazo = mazo.sort(() => Math.random() - 0.5);
+
+                nombres.forEach((n, i) => update(ref(db, 'jugadores/' + n), { carta: mazo[i] }));
+                update(ref(db), { estado: "repartido" });
+            }, { onlyOnce: true });
+        };
+
+        window.reiniciar = () => {
+            remove(ref(db, 'jugadores'));
+            update(ref(db), { estado: "esperando" });
+            location.reload();
+        };
+    </script>
+</body>
+</html>
